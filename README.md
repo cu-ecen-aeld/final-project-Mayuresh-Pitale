@@ -2,7 +2,7 @@
 
 **Student:** Mayuresh Rajesh Pitale
 
-Welcome to my final project repository for the Embedded Linux course. 
+Welcome to my final project repository for the Advanced Embedded Software Development course. 
 
 This repository serves as the individual submission tracker for the project. All shared content, architectural details, hardware specifications, and source code links can be found on the main Project Overview Wiki page.
 
