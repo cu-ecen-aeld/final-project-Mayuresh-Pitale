@@ -18,7 +18,7 @@ The goal of this project is to build a localized predictive maintenance edge nod
 
 All architectural details, hardware specifications, and sprint tracking can be found at the links below:
 
-* 📖 **[Complete Project Overview Wiki Page](https://github.com/cu-ecen-aeld/final-project-Mayuresh-Pitale/wiki/Project%E2%80%90Overview)**
+* 📖 **[Complete Project Overview Wiki Page](https://github.com/cu-ecen-aeld/final-project-Mayuresh-Pitale/wiki/Project-Overview)**
   * *The single source of truth for system architecture, hardware schematics, and project details.*
 
 * 📅 **[Project Schedule & Sprint Kanban Board](https://github.com/users/Mayuresh-Pitale/projects/4)**
