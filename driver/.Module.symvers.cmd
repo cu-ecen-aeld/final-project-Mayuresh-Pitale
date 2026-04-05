@@ -1,0 +1,1 @@
+cmd_/home/mayuresh/final-project-Mayuresh-Pitale/driver/Module.symvers :=  sed 's/ko$$/o/'  /home/mayuresh/final-project-Mayuresh-Pitale/driver/modules.order | scripts/mod/modpost -m -a    -o /home/mayuresh/final-project-Mayuresh-Pitale/driver/Module.symvers -e -i Module.symvers -T - 

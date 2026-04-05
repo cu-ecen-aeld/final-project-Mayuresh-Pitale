@@ -1,0 +1,1 @@
+/home/mayuresh/final-project-Mayuresh-Pitale/driver/vibra_sensor.o

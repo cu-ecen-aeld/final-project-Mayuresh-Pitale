@@ -1,0 +1,1 @@
+cmd_/home/mayuresh/final-project-Mayuresh-Pitale/driver/vibra_sensor.mod := printf '%s\n'   vibra_sensor.o | awk '!x[$$0]++ { print("/home/mayuresh/final-project-Mayuresh-Pitale/driver/"$$0) }' > /home/mayuresh/final-project-Mayuresh-Pitale/driver/vibra_sensor.mod

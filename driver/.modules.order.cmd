@@ -1,0 +1,1 @@
+cmd_/home/mayuresh/final-project-Mayuresh-Pitale/driver/modules.order := {   echo /home/mayuresh/final-project-Mayuresh-Pitale/driver/vibra_sensor.ko; :; } > /home/mayuresh/final-project-Mayuresh-Pitale/driver/modules.order
