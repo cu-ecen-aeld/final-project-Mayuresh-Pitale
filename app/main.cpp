@@ -12,10 +12,9 @@
 
 pthread_mutex_t print_mutex;
 
-// Hardcoded values from your Python Colab training script
-const float min_vals[3] = {-147.00, 3748.00, -15859.00};
-const float scale_vals[3] = {0.001553, 0.002217, 0.001387};
-const float THRESHOLD = 0.159229;
+const float min_vals[3] = {0, 0, 0}; 
+const float scale_vals[3] = {0.00001, 0.00001, 0.00001}; // Much smaller scaling
+const float THRESHOLD = 0.1; // Higher threshold for stability
 
 struct SensorData {
     int16_t x, y, z;
