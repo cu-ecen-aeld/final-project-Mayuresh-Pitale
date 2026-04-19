@@ -1,121 +1,133 @@
 #include <iostream>
-#include <fstream>
 #include <pthread.h>
 #include <mqueue.h>
 #include <cstring>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdint.h>
-#include <chrono>
+#include <cmath>
+#include <memory>
+
+// TensorFlow Lite Headers
+#include "tensorflow/lite/interpreter.h"
+#include "tensorflow/lite/kernels/register.h"
+#include "tensorflow/lite/model.h"
 
 #define QUEUE_NAME "/vibra_queue"
 #define DEVICE_PATH "/dev/vibra_sensor"
-#define MAX_SIZE 1024
-#define MSG_STOP "EXIT"
-
-// Total logging time (5 minutes = 300 seconds)
-// Note: Change this to 10 for a quick test before doing the full 5 minutes!
-#define LOG_DURATION_SEC 300 
+#define MODEL_PATH "anomaly_model.tflite"
 
 pthread_mutex_t print_mutex;
+
+// Hardcoded values from your Python Colab training script
+const float min_vals[3] = {-147.00, 3748.00, -15859.00};
+const float scale_vals[3] = {0.001553, 0.002217, 0.001387};
+const float THRESHOLD = 0.159229;
+
+// Upgraded Message Queue Payload
+struct SensorData {
+    int16_t x, y, z;
+    bool stop;
+};
 
 // ---------------------------------------------------------
 // THREAD 1: Real Sensor Data Collector
 // ---------------------------------------------------------
 void* sensor_thread(void* arg) {
     mqd_t mq = mq_open(QUEUE_NAME, O_WRONLY);
-    
     int sensor_fd = open(DEVICE_PATH, O_RDONLY);
     if (sensor_fd < 0) {
-        std::cerr << "Sensor Thread: Failed to open " << DEVICE_PATH << "! Is the kernel module loaded?" << std::endl;
-        mq_send(mq, MSG_STOP, strlen(MSG_STOP) + 1, 0);
+        std::cerr << "Sensor Thread: Failed to open driver!" << std::endl;
+        SensorData stop_msg = {0, 0, 0, true};
+        mq_send(mq, (char*)&stop_msg, sizeof(SensorData), 0);
         return NULL;
     }
 
-    auto start_time = std::chrono::steady_clock::now();
     uint8_t raw_data[6];
+    SensorData data;
+    data.stop = false;
 
     pthread_mutex_lock(&print_mutex);
-    std::cout << "[Sensor Thread] Started reading real data for " << LOG_DURATION_SEC << " seconds..." << std::endl;
+    std::cout << "[Sensor] Streaming live data to Inference Engine..." << std::endl;
     pthread_mutex_unlock(&print_mutex);
 
+    // Run indefinitely until user presses Ctrl+C
     while (true) {
-        // Check if 5 minutes have passed
-        auto current_time = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
-        if (elapsed >= LOG_DURATION_SEC) {
-            break;
-        }
-
-        // Read exactly 6 bytes from our custom kernel driver
-        // Because of our wait_queue, this automatically sleeps until the hardware interrupt fires!
-        ssize_t bytes_read = read(sensor_fd, raw_data, 6);
-        if (bytes_read == 6) {
-            // Convert Little-Endian hex bytes to 16-bit signed integers
-            int16_t x = (raw_data[1] << 8) | raw_data[0];
-            int16_t y = (raw_data[3] << 8) | raw_data[2];
-            int16_t z = (raw_data[5] << 8) | raw_data[4];
-
-            // Format as CSV row
-            char buffer[MAX_SIZE];
-            sprintf(buffer, "%d,%d,%d", x, y, z);
-
-            // Send to Inference Thread
-            mq_send(mq, buffer, strlen(buffer) + 1, 0);
+        if (read(sensor_fd, raw_data, 6) == 6) {
+            data.x = (raw_data[1] << 8) | raw_data[0];
+            data.y = (raw_data[3] << 8) | raw_data[2];
+            data.z = (raw_data[5] << 8) | raw_data[4];
+            
+            mq_send(mq, (char*)&data, sizeof(SensorData), 0);
         }
     }
 
     close(sensor_fd);
-    mq_send(mq, MSG_STOP, strlen(MSG_STOP) + 1, 0);
     return NULL;
 }
 
 // ---------------------------------------------------------
-// THREAD 2: Machine Learning CSV Logger
+// THREAD 2: TensorFlow Lite Edge Inference
 // ---------------------------------------------------------
 void* inference_thread(void* arg) {
     mqd_t mq = mq_open(QUEUE_NAME, O_RDONLY);
     
-    std::ofstream csv_file("normal_motor_baseline.csv");
-    if (!csv_file.is_open()) {
-        std::cerr << "Inference Thread: Failed to create CSV file!" << std::endl;
+    // Load the TFLite Model
+    std::unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile(MODEL_PATH);
+    if (!model) {
+        std::cerr << "Inference: Failed to load " << MODEL_PATH << std::endl;
         return NULL;
     }
 
-    // Write CSV Header
-    csv_file << "Accel_X,Accel_Y,Accel_Z\n";
+    tflite::ops::builtin::BuiltinOpResolver resolver;
+    std::unique_ptr<tflite::Interpreter> interpreter;
+    tflite::InterpreterBuilder(*model, resolver)(&interpreter);
+    interpreter->AllocateTensors();
 
-    char buffer[MAX_SIZE + 1];
-    int samples_recorded = 0;
+    float* input_tensor = interpreter->typed_input_tensor<float>(0);
+    float* output_tensor = interpreter->typed_output_tensor<float>(0);
+
+    SensorData data;
+    int print_counter = 0;
 
     while (true) {
-        ssize_t bytes_read = mq_receive(mq, buffer, MAX_SIZE, NULL);
-        if (bytes_read >= 0) {
-            buffer[bytes_read] = '\0';
-            
-            if (strncmp(buffer, MSG_STOP, strlen(MSG_STOP)) == 0) {
-                break;
-            }
+        ssize_t bytes_read = mq_receive(mq, (char*)&data, sizeof(SensorData), NULL);
+        if (bytes_read == sizeof(SensorData)) {
+            if (data.stop) break;
 
-            // Write the data to the CSV file
-            csv_file << buffer << "\n";
-            samples_recorded++;
+            // 1. Normalize the Input Data
+            float in_x = (data.x - min_vals[0]) * scale_vals[0];
+            float in_y = (data.y - min_vals[1]) * scale_vals[1];
+            float in_z = (data.z - min_vals[2]) * scale_vals[2];
 
-            // Print progress every 1000 samples so we know it's working
-            if (samples_recorded % 1000 == 0) {
+            // 2. Feed the Neural Network
+            input_tensor[0] = in_x;
+            input_tensor[1] = in_y;
+            input_tensor[2] = in_z;
+
+            // 3. Run Inference
+            interpreter->Invoke();
+
+            // 4. Calculate Mean Squared Error (MSE)
+            float mse = (pow(in_x - output_tensor[0], 2) + 
+                         pow(in_y - output_tensor[1], 2) + 
+                         pow(in_z - output_tensor[2], 2)) / 3.0;
+
+            // 5. Detect Anomalies (Print 4 times a second so terminal doesn't crash)
+            print_counter++;
+            if (print_counter >= 26) { // 104Hz / 4 = ~26 samples
                 pthread_mutex_lock(&print_mutex);
-                std::cout << "[Inference Thread] Logged " << samples_recorded << " samples to CSV..." << std::endl;
+                if (mse > THRESHOLD) {
+                    std::cout << "\033[1;31m[ANOMALY DETECTED] MSE: " << mse << " > " << THRESHOLD << "\033[0m" << std::endl;
+                } else {
+                    std::cout << "\033[1;32m[NORMAL] MSE: " << mse << "\033[0m" << std::endl;
+                }
                 pthread_mutex_unlock(&print_mutex);
+                print_counter = 0;
             }
         }
     }
 
-    csv_file.close();
-    
-    pthread_mutex_lock(&print_mutex);
-    std::cout << "[Inference Thread] Finished! Total samples saved: " << samples_recorded << std::endl;
-    pthread_mutex_unlock(&print_mutex);
-    
     mq_close(mq);
     return NULL;
 }
@@ -124,13 +136,13 @@ void* inference_thread(void* arg) {
 // MAIN
 // ---------------------------------------------------------
 int main() {
-    std::cout << "--- Smart Edge Sensor Node ---" << std::endl;
+    std::cout << "--- Smart Edge Anomaly Detector Initializing ---" << std::endl;
     pthread_mutex_init(&print_mutex, NULL);
 
     struct mq_attr attr;
     attr.mq_flags = 0;
     attr.mq_maxmsg = 10;
-    attr.mq_msgsize = MAX_SIZE;
+    attr.mq_msgsize = sizeof(SensorData);
     attr.mq_curmsgs = 0;
 
     mq_unlink(QUEUE_NAME); 
@@ -146,7 +158,5 @@ int main() {
     mq_close(mq);
     mq_unlink(QUEUE_NAME);
     pthread_mutex_destroy(&print_mutex);
-
-    std::cout << "App complete. Check 'normal_motor_baseline.csv' for data." << std::endl;
     return 0;
 }
