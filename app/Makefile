@@ -1,7 +1,6 @@
 CXX ?= g++
 CXXFLAGS ?= -Wall -std=c++17
-# Added -ltensorflow-lite and -ldl
-LDFLAGS ?= -pthread -lrt -ltensorflow-lite -ldl
+LDFLAGS ?= -pthread -lrt -ldl
 
 all: vibra_app
 
