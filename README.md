@@ -29,7 +29,7 @@ All architectural details, hardware specifications, and sprint tracking can be f
 To adhere to best practices for Embedded Linux development, the source code and OS build environments are strictly separated:
 
 * 💻 **[Application & Driver Source Code](https://github.com/cu-ecen-aeld/final-project-Mayuresh-Pitale)**
-  * *This current repository hosts the pure C Linux kernel character driver (`MPU6050_driver.c`) and the multithreaded user-space application.*
+  * *This current repository hosts the pure C Linux kernel character driver (`vibra_sensor.c`) and the multithreaded user-space application.*
 
 * ⚙️ **[OS Build System (Buildroot) Repository](https://github.com/Mayuresh-Pitale/edge-node-buildroot)**
   * *Contains the custom `defconfig`, device tree overlays, and package makefiles used to cross-compile the custom Linux OS image.*
